@@ -1,0 +1,131 @@
+break;
+            }
+        }
+
+        // transfer tokens to wallet address
+        require(IERC20(tokenAddress).transfer(msg.sender, amount));
+        emit LogTokensWithdrawn(tokenAddress, withdrawalAddress, amount, _id);
+    }
+
+    function createMultipleLocks(
+        address _tokenAddress,
+        address _withdrawalAddress,
+        uint256[] memory _amounts,
+        uint256[] memory _unlockTimes,
+        uint128 _purpose
+    ) external payable returns (uint256 _id) {
+        require(_amounts.length > 0);
+        require(_amounts.length == _unlockTimes.length);
+
+        uint256 fee =
+            _amounts.length.mul(bnbFee).sub(
+                _amounts.length.mul(bnbFee).mul(vestingDiscount).div(100)
+            );
+        require(msg.value >= fee, "fees missing");
+
+        totalBnbFees = totalBnbFees.add(msg.value);
+        remainingBnbFees = remainingBnbFees.add(msg.value);
+
+        uint256 i;
+        for (i = 0; i < _amounts.length; i++) {
+            require(_amounts[i] > 0);
+            require(_unlockTimes[i] < 10000000000);
+            require(_unlockTimes[i] > block.timestamp);
+
+            //update balance in address
+            walletTokenBalance[_tokenAddress][
+                _withdrawalAddress
+            ] = walletTokenBalance[_tokenAddress][_withdrawalAddress].add(
+                _amounts[i]
+            );
+
+            _id = ++depositId;
+            lockedToken[_id].tokenAddress = _tokenAddress;
+            lockedToken[_id].withdrawalAddress = _withdrawalAddress;
+            lockedToken[_id].sender = msg.sender;
+            lockedToken[_id].tokenAmount = _amounts[i];
+            lockedToken[_id].unlockTime = _unlockTimes[i];
+            lockedToken[_id].lockTime = block.timestamp;
+            lockedToken[_id].withdrawn = false;
+            lockedToken[_id].purpose = _purpose;
+
+            allDepositIds.push(_id);
+            depositsByWithdrawalAddress[_withdrawalAddress].push(_id);
+
+            //transfer tokens into contract
+            require(
+                IERC20(_tokenAddress).transferFrom(
+                    msg.sender,
+                    address(this),
+                    _amounts[i]
+                )
+            );
+            emit LogTokensLocked(
+                _tokenAddress,
+                msg.sender,
+                _amounts[i],
+                _unlockTimes[i],
+                depositId
+            );
+        }
+    }
+
+    function getTotalTokenBalance(address _tokenAddress)
+        public
+        view
+        returns (uint256)
+    {
+        return IERC20(_tokenAddress).balanceOf(address(this));
+    }
+
+    function getTokenBalanceByAddress(
+        address _tokenAddress,
+        address _walletAddress
+    ) public view returns (uint256) {
+        return walletTokenBalance[_tokenAddress][_walletAddress];
+    }
+
+    function getAllDepositIds() public view returns (uint256[] memory) {
+        return allDepositIds;
+    }
+
+    function getDepositDetails(uint256 _id)
+        public
+        view
+        returns (
+            address _tokenAddress,
+            address _withdrawalAddress,
+            address _sender,
+            uint256 _tokenAmount,
+            uint256 _unlockTime,
+            uint256 _lockTime,
+            bool _withdrawn
+        )
+    {
+        return (
+            lockedToken[_id].tokenAddress,
+            lockedToken[_id].withdrawalAddress,
+            lockedToken[_id].sender,
+            lockedToken[_id].tokenAmount,
+            lockedToken[_id].unlockTime,
+            lockedToken[_id].lockTime,
+            lockedToken[_id].withdrawn
+        );
+    }
+
+    function getDepositsByWithdrawalAddress(address _withdrawalAddress)
+        public
+        view
+        returns (uint256[] memory)
+    {
+        return depositsByWithdrawalAddress[_withdrawalAddress];
+    }
+
+    function setBnbFee(uint256 fee) external onlyOwner {
+        require(fee >= 0);
+        bnbFee = fee;
+    }
+
+    function setVestingDiscount(uint256 discount) external onlyOwner {
+        require(discount > 0, "Fee is too small");
+        require(discount < 99);
