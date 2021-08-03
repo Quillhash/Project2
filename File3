@@ -1,0 +1,13 @@
+vestingDiscount = discount;
+    }
+
+    function withdrawFees(address payable withdrawalAddress)
+        external
+        onlyOwner
+    {
+        if (remainingBnbFees > 0) {
+            withdrawalAddress.transfer(remainingBnbFees);
+            remainingBnbFees = 0;
+        }
+    }
+}
